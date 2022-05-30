@@ -1,0 +1,40 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby:
+#
+Vagrant.configure("2") do |config|
+ 
+##########centos801##########
+#서버로 사용될 centos8
+  config.vm.define "node-centos8" do |centos|
+    centos.vm.box = "generic/centos8"
+    centos.vm.host_name = "node2"
+    centos.vm.network "private_network", ip: "172.16.1.13"
+    centos.vm.network :public_network, :dev => "vswitch01", :ovs => true, ip: "211.183.3.153"
+    centos.vm.network :public_network, :dev => "vswitch02", :ovs => true, ip: "5.5.5.13"
+    centos.vm.network "forwarded_port", guest: 22, host: 60050, auto_correct: true, id: "ssh"
+    centos.vm.provision "file", source: "/cloud/key/ssh_key.txt", destination: "~/ssh_key.txt"
+    centos.vm.provision "shell", inline: "mkdir -p ~/.ssh ; touch ~/.ssh/authorized_keys ; cat /home/vagrant/ssh_key.txt > ~/.ssh/authorized_keys"
+    centos.vm.provider :libvirt do |rsc|
+      rsc.memory = 1024
+      rsc.cpus = 1
+    end
+  end
+ ##########ubuntu1801##########
+ #노드로 사용될 ubuntu18.04
+  config.vm.define "node-ubuntu" do |ubuntu|
+    ubuntu.vm.box = "generic/ubuntu1804"
+    ubuntu.vm.host_name = "node3"
+    ubuntu.vm.network "private_network", ip: "172.16.1.14"
+    ubuntu.vm.network :public_network, :dev => "vswitch01", :ovs => true, ip: "211.183.3.154"
+    ubuntu.vm.network :public_network, :dev => "vswitch02", :ovs => true, ip: "5.5.5.14"
+    ubuntu.vm.network "forwarded_port", guest: 22, host: 60051, auto_correct: true, id: "ssh"
+    ubuntu.vm.provision "shell", inline: "apt install bridge-utils", privileged: true
+    ubuntu.vm.provision "file", source: "/cloud/key/ssh_key.txt", destination: "~/ssh_key.txt"
+    ubuntu.vm.provision "shell", inline: "mkdir -p ~/.ssh ; touch ~/.ssh/authorized_keys ; cat /home/vagrant/ssh_key.txt > ~/.ssh/authorized_keys"
+    ubuntu.vm.provider :libvirt do |rsc|
+      rsc.memory = 1024
+      rsc.cpus = 1
+    end
+  end
+end
+

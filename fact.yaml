@@ -1,0 +1,6 @@
+- name: fact dump
+  hosts: node
+  tasks:
+    - name: print all facts
+      debug:
+        var: ansible_mount

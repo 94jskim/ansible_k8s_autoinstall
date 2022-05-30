@@ -1,0 +1,81 @@
+---
+- name: storage nfs install
+  become: yes
+  hosts: storage
+
+  tasks:
+
+    # 업데이트 진행
+    - name: yum update
+      yum:
+        name: '*'
+        state: latest
+
+    # 방화벽 정지/비활성화
+    - name: firewalld stop/disable
+      service:
+        name: firewalld
+        state: stopped
+        enabled: false
+
+    # selinux 정지/비활성화
+    - name: selinux off
+      shell: setenforce 0 ; sed -i --follow-symlinks 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/sysconfig/selinux
+
+    # nfs-utils 설치
+    - name: install nfs-utils
+      yum:
+        name: nfs-utils
+        state: present
+
+    # shared  디랙토리가 없을경우 생성
+    - name: make folder
+      file:
+        path: /shared
+        state: directory
+        owner: root
+        group: root
+        mode: '0777'
+
+    # nfs 연결 권한 설정
+    - name: config /etc/exports
+      shell: grep -qxF "/shared 192.168.1.0/24(rw,sync,no_root_squash)" /etc/exports || echo "/shared 192.168.1.0/24(rw,sync,no_root_squash)" /etc/exports
+
+    # rpcbind 재시작/활성화
+    - name: rpcbind started/enabled
+      service: 
+        name: rpcbind 
+        state: restarted 
+        enabled: true
+
+    # nfs 서버 재시작/활성화
+    - name: nfs-server started/enabled
+      service:
+        name: nfs-server
+        state: restarted
+        enabled: true
+
+- name: mount nfs
+  hosts: node, localhost 
+  become: yes 
+
+  tasks: 
+    # 마운트 할 기본 디렉토리 생성
+    - name: create cloud directory 
+      file: 
+        path: /cloud
+        state: directory 
+        mode: '1777'
+
+    # nfs mount를 위한 nfs-utils 설치
+    - name: install nfs-utils
+      yum: 
+        name: nfs-utils 
+        state: present 
+
+    - name: mount nfs 
+      mount: 
+        src: 192.168.1.90:/shared 
+        path: /cloud 
+        fstype: nfs 
+        state: mounted

@@ -1,0 +1,51 @@
+---
+- name: ssh-key install
+  hosts: localhost
+  become: yes
+
+  tasks:
+    #localhost??ssh-key ?앹꽦
+    - name: ssh keygen if not exists key
+      shell: test -f ~/.ssh/id_rsa && echo "exists" || ssh-keygen -q -f ~/.ssh/id_rsa -N ''
+    #媛??쒕쾭??ssh-keyscan??吏꾪뻾??known_hosts???낅젰
+    - name: ssh keyscan
+      shell: |
+        ssh-keyscan 192.168.1.91 > ~/.ssh/known_hosts ;
+        ssh-keyscan 192.168.1.92 >> ~/.ssh/known_hosts ;
+        ssh-keyscan 192.168.1.90 >>  ~/.ssh/known_hosts
+
+
+#媛??쒕쾭??id_rsa.pub ?낅젰
+- name: id_rsa.pub init
+  hosts: all
+  become: yes
+
+  tasks:
+    # .ssh?대뜑媛 ?놁쓣寃쎌슦 ?앹꽦
+    - name: create .ssh folder
+      file:
+        path: ~/.ssh
+        state: directory
+
+    # id_rsa.pub瑜?媛??쒕쾭??蹂듭궗
+    - name: copy id_rsa.pub
+      copy:
+        src: ~/.ssh/id_rsa.pub
+        dest: ~/.ssh/id_rsa.pub.tmp
+
+    # authorized_keys ?뚯씪???놁쓣 寃쎌슦 ?앹꽦
+    - name: create authorized_keys file
+      file:
+        path: ~/.ssh/authorized_keys
+        state: touch
+
+    # 媛숈? 媛믪씠 ?놁쓣寃쎌슦?먮쭔 id_rsa.pub瑜?authorized_keys???낅젰
+    - name: insert public key if not exists
+      shell: grep -qxF "$(cat ~/.ssh/id_rsa.pub.tmp)" ~/.ssh/authorized_keys || echo "$(cat ~/.ssh/id_rsa.pub.tmp)" >> ~/.ssh/authorized_keys
+
+    # ?꾩떆 ?뚯씪 ??젣
+    - name: remove tmp file
+      file:
+        path: ~/.ssh/id_rsa.pub.tmp
+        state: absent
+

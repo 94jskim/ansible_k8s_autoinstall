@@ -1,0 +1,184 @@
+---
+- name: default setting for nodes 
+  hosts: node 
+  become: yes 
+
+  tasks: 
+
+    # 업데이트 진행
+    - name: yum update
+      yum:
+        name: '*'
+        state: latest
+
+    # 방화벽 정지/비활성화
+    - name: firewalld stop/disable
+      service:
+        name: firewalld
+        state: stopped
+        enabled: false
+
+    # selinux 정지/비활성화
+    - name: selinux off
+      shell: setenforce 0 ; sed -i --follow-symlinks 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/sysconfig/selinux
+
+    # NetworkManager 정지/비활성화
+    - name:  disable NetworkManager 
+      service: 
+        name: NetworkManager 
+        state: stopped 
+        enabled: false 
+
+    # elrepo key 입력
+    - name: import elrepo rpm key 
+      rpm_key: 
+        state: present 
+        key: https://www.elrepo.org/RPM-GPG-KEY-elrepo.org
+
+    # elrepo rpm 설치
+    - name: install elrepo rpm 
+      yum: 
+        name: http://elrepo.org/elrepo-release-7.0-4.el7.elrepo.noarch.rpm 
+        state: present 
+
+    # 최신 커널 설치
+    - name: install latest kernel
+      yum: 
+        name: kernel-ml
+        disablerepo: "*" 
+        enablerepo: "elrepo-kernel"
+
+    # 최신 커널로 부팅설정
+    - name: grub2 setting for booting choice 
+      shell: grub2-set-default "CentOS Linux (5.17.5-1.el7.elrepo.x86_64) 7 (Core)" ; grub2-editenv list
+
+
+    # ens 이름 변경을 위한 grub 세팅
+    - name: edit grub for change ethernet name 
+      shell: sed -i --follow-symlinks 's/rhgb quiet"/rhgb quiet net.ifnames=0 biosdevname=0"/g' /etc/default/grub ; grub2-mkconfig -o /boot/grub2/grub.cfg
+
+
+    # OpenVswitch repo 설치
+    - name: install OpenVswitch repo
+      yum: 
+        name: https://www.rdoproject.org/repos/rdo-release.rpm
+        state: present
+
+    # OpenVswitch 설치
+    - name: install OpenVswitch 
+      yum: 
+        name: 
+          - openvswitch
+          - bridge-utils
+          - libibverbs
+        state: present 
+
+    # yum 업데이트
+    - name: yum update 
+      yum: 
+        name: "*" 
+        state: latest 
+
+    # OpenVswitch 시작/활성화
+    - name: openvswitch start 
+      service: 
+        name: openvswitch 
+        state: started 
+        enabled: yes 
+
+#node1을 위한 ifcfg 세팅
+- name: node1 OpenVswitch setting 
+  hosts: node1 
+  become: yes 
+
+  tasks: 
+
+    # ifcfg-eth0 설정
+    - name: copy ifcfg-eth0
+      copy: 
+        src: ./ifcfg_files/ifcfg-eth0-node1 
+        dest: /etc/sysconfig/network-scripts/ifcfg-eth0
+
+    # ifcfg-eth1 설정
+    - name: copy ifcfg-eth1 
+      copy: 
+        src: ./ifcfg_files/ifcfg-eth1-node1
+        dest: /etc/sysconfig/network-scripts/ifcfg-eth1
+
+    # ifcfg-vswitch01 설정
+    - name: copy ifcfg-vswitch01
+      copy: 
+        src: ./ifcfg_files/ifcfg-vswitch01-node1
+        dest: /etc/sysconfig/network-scripts/ifcfg-vswitch01
+
+#node2를 위한 ifcfg 세팅
+- name: node2 OpenVswitch setting
+  hosts: node2
+  become: yes
+
+  tasks:
+
+    # ifcfg-eth0 설정
+    - name: copy ifcfg-eth0
+      copy:
+        src: ./ifcfg_files/ifcfg-eth0-node2
+        dest: /etc/sysconfig/network-scripts/ifcfg-eth0
+
+    # ifcfg-eth1 설정
+    - name: copy ifcfg-eth1
+      copy:
+        src: ./ifcfg_files/ifcfg-eth1-node2
+        dest: /etc/sysconfig/network-scripts/ifcfg-eth1
+
+    # ifcfg-vswitch01 설정
+    - name: copy ifcfg-vswitch01
+      copy:
+        src: ./ifcfg_files/ifcfg-vswitch01-node2
+        dest: /etc/sysconfig/network-scripts/ifcfg-vswitch01
+
+# 시스템 재시작
+- name: reboot system 
+  hosts: node 
+  become: yes 
+  gather_facts: no 
+
+  tasks: 
+    # 기존 ens 백업
+    - name: backup original ifcfg
+      shell: |
+        cd /etc/sysconfig/network-scripts [! -f ifcfg-ens32 ] || mv ifcfg-ens32 bu.ifcfg-ens32 ;
+        cd /etc/sysconfig/network-scripts [! -f ifcfg-ens33 ] || mv ifcfg-ens32 bu.ifcfg-ens33 ;
+
+    # 시스템 재시작
+    - name: reboot remote system 
+      shell: "sleep 5 && reboot"
+      
+      async: 1
+      poll: 0
+
+    - name: wait for reboot
+      wait_for_connection:
+        connect_timeout: 60
+        sleep: "5"
+        delay: "15"
+        timeout: "300"
+
+- name: GRE tunneling 
+  hosts: node1 
+  become: yes 
+  gather_facts: no 
+
+  tasks: 
+    #  GRE 터널링 준비
+    - name: setting GRE tunnel
+      shell: ovs-vsctl add-br vswitch02 
+
+- name: GRE tunneling 
+  hosts: node2 
+  become: yes 
+  gather_facts: no 
+
+  tasks: 
+    #  GRE 터널링 준비
+    - name: setting GRE tunnel
+      shell: ovs-vsctl add-br vswitch02 

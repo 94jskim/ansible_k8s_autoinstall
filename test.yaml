@@ -1,0 +1,10 @@
+- name: test 
+  hosts: localhost 
+  become: yes 
+
+  tasks: 
+    - name: test
+      lineinfile: 
+        path: ~/.testfile 
+        line: 123123 
+        create: yes

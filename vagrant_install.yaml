@@ -1,0 +1,159 @@
+---
+- name: ssh-key init 
+  hosts: localhost
+  become: true 
+
+  tasks: 
+    # key folder 생성
+    - name: create /cloud/key folder
+      file: 
+        path: /cloud/key
+        state: directory
+
+    # Vagrant에서 만든 가상머신에 넣을 ssh-key 생성
+    - name: cp ssk-key 
+      copy: 
+        src: ~/.ssh/id_rsa.pub
+        dest: /cloud/key/ssh_key.txt
+
+
+- name: vagrant install for nodes
+  hosts: node
+  become: true
+ 
+  tasks:
+    - name: yum-utils install
+      yum:
+        name: yum-utils
+        state: present
+ 
+    - name: add vagrant repo
+      shell: yum-config-manager --add-repo=https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
+ 
+    - name: install vagrant
+      yum:
+        name: 'libvirt, vagrant, gcc-c++, make, libstdc++-devel, libvirt-devel, libvirt-daemon-kvm, libvirt-client'
+        state: present
+        update_cache: true
+ 
+    - name: libvirt restart
+      service:
+        name: libvirtd
+        state: started
+ 
+    - name: vagrant plugin install
+      shell: vagrant plugin install vagrant-libvirt
+ 
+    - name: vagrant version
+      command: vagrant --version
+      register: contents
+
+    - name: vagrant version check
+      debug: var=contents.stdout_lines
+ 
+#node1에 대한 vagrant 설정
+- name: node1 setting 
+  hosts: node1 
+  become: yes 
+  tasks: 
+
+    - name: create home folder 
+      file: 
+        path: /cloud/.vagrant.node1 
+        state: directory
+
+
+    - name: vagrant_home setting 
+      shell: |
+        grep -qxF "export VAGRANT_HOME=/cloud/.vagrant.node1" ~/.bash_profile || echo "export VAGRANT_HOME=/cloud/.vagrant.node1" >> ~/.bash_profile ;
+        export VAGRANT_HOME=/cloud/.vagrant.node1
+
+    - name: create vag dir
+      file:
+        path: /cloud/vag_n1
+        state: directory
+ 
+    - name: vagrant init
+      shell: cd /cloud/vag_n1 ; vagrant init
+      ignore_errors: yes
+
+    - name: submit Vagrantfile
+      copy:
+        src: ./vagrant_files/Vagrantfile_node1
+        dest: /cloud/vag_n1/Vagrantfile
+        mode: '0666'
+ 
+    - name: vagrant up
+      shell: cd /cloud/vag_n1 ; vagrant up
+
+    - name: apply libvirt autostart
+      shell: |
+        virsh autostart vag_n1_node-centos8 ;
+        virsh autostart vag_n1_node-ubuntu ;
+        sleep 10
+
+#node2에 대한 vagrant 설정
+- name: node2 setting 
+  hosts: node2 
+  become: yes 
+  tasks: 
+
+    - name: create home folder 
+      file: 
+        path: /cloud/.vagrant.node2 
+        state: directory
+
+
+    - name: vagrant_home setting 
+      shell: |
+        grep -qxF "export VAGRANT_HOME=/cloud/.vagrant.node2" ~/.bash_profile || echo "export VAGRANT_HOME=/cloud/.vagrant.node2" >> ~/.bash_profile ;
+        export VAGRANT_HOME=/cloud/.vagrant.node2
+    - name: create vag dir
+      file:
+        path: /cloud/vag_n2
+        state: directory
+ 
+    - name: vagrant init
+      shell: cd /cloud/vag_n2 ; vagrant init
+      ignore_errors: yes
+
+    - name: submit Vagrantfile
+      copy:
+        src: ./vagrant_files/Vagrantfile_node2
+        dest: /cloud/vag_n2/Vagrantfile
+        mode: '0666'
+ 
+    - name: vagrant up
+      shell: cd /cloud/vag_n2 ; vagrant up
+
+    - name: apply libvirt autostart
+      shell: |
+        virsh autostart vag_n2_node-centos8 ;
+        virsh autostart vag_n2_node-ubuntu ;
+        sleep 10
+
+#생성이 완료된 가상머신 점검
+- name: setting test
+  hosts: localhost
+  become: yes
+
+  tasks:
+  - name: ssh-keyscan
+    shell: |
+      ssh-keyscan 211.183.3.151 >> ~/.ssh/known_hosts ;
+      ssh-keyscan 211.183.3.152 >> ~/.ssh/known_hosts ;
+      ssh-keyscan 211.183.3.153 >> ~/.ssh/known_hosts ;
+      ssh-keyscan 211.183.3.154 >> ~/.ssh/known_hosts ;
+
+- name: setting test
+  hosts: k8s_nodes,k8s_master
+  become: yes
+  gather_facts: no
+
+  tasks:
+  - name: ping
+    ping:
+    register: contents
+
+  - name: print ping
+    debug: var=contents

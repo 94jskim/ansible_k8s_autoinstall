@@ -1,0 +1,119 @@
+---
+- name: stop and disable friewalld
+  service: 
+    name: firewalld
+    state: stopped 
+    enabled: false 
+
+- name: selinux off 
+  shell: |
+    setenforce 0 ;
+    sed -i --follow-symlinks 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/sysconfig/selinux
+
+- name: install nfs 
+  yum: 
+    name: nfs-utils
+    state: present 
+
+- name: swapoff
+  shell: |
+    swapoff -a ;
+    sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+- name: iptables setting 
+  shell: |
+    cat <<EOF >  /etc/sysctl.d/k8s.conf
+    net.bridge.bridge-nf-call-ip6tables = 1
+    net.bridge.bridge-nf-call-iptables = 1
+    EOF ;
+    sysctl --system ;
+    lsmod | grep br_netfilter
+    
+- name: create directory /cloud 
+  file: 
+    path: /cloud
+    state: directory 
+    mode: '1777'
+
+- name: nfs mount 
+  mount: 
+    src: "211.183.3.90:/shared"
+    path: "/cloud"
+    fstype: nfs 
+    state: mounted
+
+- name: copy k8s_hosts 
+  copy: 
+    src: ./etc/k8s_hosts 
+    dest: ~/k8s_hosts
+
+- name: hosts insert
+  shell: |
+    while read LINE; do
+        grep -qxF "$LINE" /etc/hosts || echo "$LINE"  >> /etc/hosts
+    done < ~/k8s_hosts
+
+- name: docker ce repository install 
+  get_url: 
+    url: https://download.docker.com/linux/centos/docker-ce.repo
+    dest: /etc/yum.repos.d/docker-ce.repo
+    mode: '0644'
+
+- name: update yum
+  yum: 
+    name: '*'
+    state: latest
+
+- name: install docker-ce
+  yum: 
+    name: docker-ce
+    state: present
+
+- name: start docker-ce
+  service: 
+    name: docker
+    state: started 
+    enabled: true
+
+- name: copy daemon.json 
+  copy: 
+    src: ./etc/docker_daemon.json 
+    dest: /etc/docker/daemon.json 
+    mode: '0644'
+
+- name: create docker.service.d dir 
+  file: 
+    path: /etc/systemd/system/docker.service.d 
+    state: directory    
+
+- name: reload daemon 
+  systemd: 
+    state: restarted 
+    daemon_reload: yes 
+    name: docker
+
+- name: update yum
+  yum:
+    name: '*'
+    state: latest
+
+- name: copy kubernetes.repo to /etc/yum.repos.d/
+  copy: 
+    src: ./etc/kubernetes.repo.centos8 
+    dest: /etc/yum.repos.d/kubernetes.repo
+    mode: '0644'
+
+- name: install kubeadm, kubelet, kubectl
+  yum: 
+    name: 
+    - kubeadm 
+    - kubelet 
+    - kubectl 
+    state: present
+
+- name: start kubelet 
+  service: 
+    name: kubelet 
+    state: started
+    enabled: true
+

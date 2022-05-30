@@ -1,0 +1,74 @@
+--- 
+- name: kubernetes installation 
+  hosts: k8s_master, k8s_nodes 
+  become: yes 
+  vars: 
+    filename: "{{ 'k8s_centos_install' if ansible_distribution == 'CentOS'
+                else 'k8s_ubuntu_install' if ansible_distribution == 'Ubuntu'
+                else 'k8s_centos_install' }}"
+
+
+  tasks: 
+    - name: installing 
+      include_tasks: "{{ filename }}.yaml"
+
+    - name: fix CRI Error 
+      shell: rm -rf /etc/containerd/config.toml 
+
+    - name: restart containerd 
+      service: 
+        name: containerd
+        state: restarted 
+
+- name: kubernetes master setting 
+  hosts: k8s_master 
+  become: yes 
+  vars: 
+
+  tasks: 
+    - name: kubeadm check 
+      shell: test  -f ~/.kube/config || echo not_exist
+      register: k8s_check 
+
+    - set_fact: 
+        k8s_check: "{{ k8s_check.stdout }}"
+     
+    - name: kubeadm init 
+      shell: kubeadm init --apiserver-advertise-address 211.183.3.151 --pod-network-cidr=10.244.0.0/16
+      when: k8s_check == 'not_exist'
+
+    - name: after init process 
+      shell: |
+        mkdir -p $HOME/.kube
+        cp -if /etc/kubernetes/admin.conf $HOME/.kube/config
+        chown $(id -u):$(id -g) $HOME/.kube/config
+      when: k8s_check == 'not_exist'
+
+    - name: kubernetes calico install 
+      shell: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+      when: k8s_check == 'not_exist'
+
+    - name: create k8s folder in cloud 
+      file: 
+        path: /cloud/k8s 
+        state: directory 
+        
+    - name: kubeadm token create
+      shell: kubeadm token create --print-join-command > /cloud/k8s/join_key.txt
+
+- name: kubernetes worker join setting 
+  hosts: k8s_nodes 
+  become: yes 
+
+  tasks: 
+    - name: kubeadm check
+      shell: test  -f /etc/kubernetes/pki/ca.crt || echo not_exist
+      register: join_check
+
+    - set_fact:
+        join_check: "{{ join_check.stdout }}"
+
+    - name: kubeadm join 
+      shell: $(cat /cloud/k8s/join_key.txt)
+      when: join_check == 'not_exist'
+
